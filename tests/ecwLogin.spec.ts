@@ -90,20 +90,33 @@ test('run script', async ({ page }) => {
       });
     });
 
-    // Uncheck all provider checkboxes before starting new provider
-    const allCheckboxes = page.locator('#providerScroll .checkbox input[type="checkbox"]');
-    const checkboxCount = await allCheckboxes.count();
-
-    for (let j = 0; j < checkboxCount; j++) {
-      const checkbox = allCheckboxes.nth(j);
-      if (await checkbox.isChecked()) {
-        await checkbox.click({ force: true });
-      }
-    }
+    // // Uncheck all provider checkboxes before starting new provider
+    // console.log(`=== UNCHECKING ALL PROVIDERS ===`);
     
-    // Brief pause to let UI update after unchecking
-    await page.waitForTimeout(500);
-    console.log(`=== UNCHECKED ALL PROVIDERS ===`);
+    // // Find all checked providers (those with ng-not-empty class)
+    // const checkedProviders = page.locator('#providerScroll input[type="checkbox"].ng-not-empty');
+    // const checkedCount = await checkedProviders.count();
+    
+    // console.log(`Found ${checkedCount} checked providers to uncheck. Will uncheck all but the first one.`);
+
+    // if (checkedCount > 0) {
+    //   for (let j = 1; j < checkedCount; j++) {
+    //     try {
+    //       const checkbox = checkedProviders.nth(j);
+    //       const providerId = await checkbox.getAttribute('value');
+    //       await checkbox.click();
+    //       console.log(`Unchecked provider: ${providerId}`);
+    //     } catch (error) {
+    //       console.log(`Error unchecking provider ${j}: ${error.message}`);
+    //     }
+    //   }
+      
+    //   // Wait for UI to update after unchecking all providers
+    //   await page.waitForTimeout(1000);
+    //   console.log(`✓ Successfully unchecked all ${checkedCount} providers`);
+    // } else {
+    //   console.log(`✓ No providers were checked - ready to proceed`);
+    // }
     
     console.log(`Found ${providerList.length} providers:`, providerList);
 
@@ -151,58 +164,12 @@ test('run script', async ({ page }) => {
         let encElements;
         let encCount = 0;
         
-        // Method 1: Direct ID selector with enc: prefix
+        // Direct ID selector with enc: prefix
         encElements = page.locator('[id^="enc:"]');
         encCount = await encElements.count();
         console.log(`Method 1 - Direct enc: selector found: ${encCount} elements`);
         
-        if (encCount === 0) {
-          // Method 2: Look in calendar container
-          encElements = page.locator('.fc-content, .fc-event').filter({ has: page.locator('[id^="enc:"]') });
-          encCount = await encElements.count();
-          console.log(`Method 2 - Calendar container search found: ${encCount} elements`);
-        }
-        
-        if (encCount === 0) {
-          // Method 3: Search for any element with encounter class and enc ID
-          encElements = page.locator('.encounter[id^="enc:"]');
-          encCount = await encElements.count();
-          console.log(`Method 3 - Encounter class with enc ID found: ${encCount} elements`);
-        }
-        
-        if (encCount === 0) {
-          // Method 4: Wait longer and try again
-          console.log('No encounters found, waiting longer...');
-          await page.waitForTimeout(3000);
-          encElements = page.locator('[id^="enc:"]');
-          encCount = await encElements.count();
-          console.log(`Method 4 - After longer wait found: ${encCount} elements`);
-        }
-        
-        if (encCount === 0) {
-          // Method 5: Debug what's actually on the page
-          const pageContent = await page.evaluate(() => {
-            // Look for any elements with 'enc' in their ID
-            const allElements = document.querySelectorAll('*[id*="enc"]');
-            const results: Array<{id: string, tagName: string, className: string, visible: boolean}> = [];
-            for (let el of allElements) {
-              const htmlEl = el as HTMLElement;
-              results.push({
-                id: el.id,
-                tagName: el.tagName,
-                className: el.className,
-                visible: htmlEl.offsetWidth > 0 && htmlEl.offsetHeight > 0
-              });
-            }
-            return results.slice(0, 10); // Limit to first 10
-          });
-          console.log('Debug - Elements with "enc" in ID:', pageContent);
-                   
-          // Check if calendar is visible
-          const calendarVisible = await page.locator('.fc-view').isVisible().catch(() => false);
-          console.log(`Calendar view visible: ${calendarVisible}`);
-        }
-        
+                
         // Process encounters if found
         for (let j = 0; j < encCount; j++) {
           try {
@@ -216,6 +183,35 @@ test('run script', async ({ page }) => {
             
             // Wait for encounter modal/form to fully load
             await page.waitForTimeout(3000);
+
+            // Close common warning message if it appears            
+            if (await page.locator("#commonWarningMessage").isVisible()) {
+                try {
+                  console.log(`Common warning message found for ${encId}`);
+                  
+                  // Find the specific Cancel button in the warning modal (has btn-lgrey class)
+                  // This distinguishes it from the appointment screen Cancel button (btn-blue)
+            
+                  const cancelButton = page.locator('[id*="commonWarning"] button', { hasText: 'Cancel' });
+                  // const cancelButton = page.locator('.commonButton.btn-lgrey', { hasText: 'Cancel' });
+                  
+                  if (await cancelButton.isVisible({ timeout: 3000 })) {
+                    await cancelButton.click();
+                    console.log(`Clicked Cancel button for ${encId}`);
+                    
+                    // Wait for the modal to disappear
+                    await page.waitForSelector('#commonWarningMessage', { state: 'hidden', timeout: 5000 });
+                    console.log(`Common warning message closed for ${encId}`);
+                    
+                    // Give UI time to settle
+                    await page.waitForTimeout(1000);
+                  } else {
+                    console.log(`Cancel button not visible for common warning message ${encId}`);
+                  }
+                } catch (error) {
+                  console.log(`Error handling common warning message for ${encId}: ${error.message}`);
+                }
+            }
             
             // Handle any initial loading screens or modals
             try {
